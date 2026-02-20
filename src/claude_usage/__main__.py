@@ -43,6 +43,12 @@ PRICING = {
         "cache_write": 3.75,
         "cache_read": 0.30,
     },
+    "claude-haiku-4": {
+        "input": 1.00,
+        "output": 5.00,
+        "cache_write": 1.25,
+        "cache_read": 0.10,
+    },
     "claude-3-5-haiku": {
         "input": 0.80,
         "output": 4.00,
