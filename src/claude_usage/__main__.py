@@ -14,8 +14,23 @@ from pathlib import Path
 
 from claude_usage.format import render_daily_table, render_model_table, render_summary_table
 
-# Pricing per million tokens
+# Pricing per million tokens (5-minute cache write rate; cache reads are 0.1x input).
+# More-specific prefixes must come before less-specific ones — get_model_pricing()
+# returns on the first match.
 PRICING = {
+    # Opus 4.5+ dropped to $5/$25; original Opus 4 and 4.1 remain at $15/$75.
+    "claude-opus-4-6": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_write": 6.25,
+        "cache_read": 0.50,
+    },
+    "claude-opus-4-5": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_write": 6.25,
+        "cache_read": 0.50,
+    },
     "claude-opus-4": {
         "input": 15.00,
         "output": 75.00,
@@ -28,17 +43,26 @@ PRICING = {
         "cache_write": 3.75,
         "cache_read": 0.30,
     },
-    "claude-3-5-sonnet": {
-        "input": 3.00,
-        "output": 15.00,
-        "cache_write": 3.75,
-        "cache_read": 0.30,
-    },
     "claude-3-5-haiku": {
         "input": 0.80,
         "output": 4.00,
         "cache_write": 1.00,
         "cache_read": 0.08,
+    },
+}
+
+# Requests exceeding this token count on eligible models are billed at long-context rates.
+# Total input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens.
+_LONG_CONTEXT_THRESHOLD = 200_000
+
+# Long-context pricing for models that support the 1M context beta.
+# Cache rates use the same multipliers as standard pricing (1.25x write, 0.1x read).
+_LONG_CONTEXT_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-6": {
+        "input": 10.00,
+        "output": 37.50,
+        "cache_write": 12.50,
+        "cache_read": 1.00,
     },
 }
 
@@ -108,6 +132,17 @@ def calculate_cost(usage: dict, model: str) -> float:
     pricing = get_model_pricing(model)
     if not pricing:
         return 0.0
+
+    # Switch to long-context rates if total input exceeds 200K tokens.
+    total_input = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
+    )
+    for prefix, lc_pricing in _LONG_CONTEXT_PRICING.items():
+        if model.startswith(prefix) and total_input > _LONG_CONTEXT_THRESHOLD:
+            pricing = lc_pricing
+            break
 
     cost = 0.0
 
